@@ -24,6 +24,23 @@ resource "random_id" "suffix" {
   byte_length = 4
 }
 
+locals {
+  site_root = "${path.module}/../site"
+  site_files = fileset(local.site_root, "**")
+  site_content_types = {
+    css   = "text/css"
+    html  = "text/html"
+    ico   = "image/x-icon"
+    jpg   = "image/jpeg"
+    js    = "application/javascript"
+    png   = "image/png"
+    svg   = "image/svg+xml"
+    ttf   = "font/ttf"
+    woff  = "font/woff"
+    woff2 = "font/woff2"
+  }
+}
+
 # Cree le reseau principal du projet.
 resource "aws_vpc" "main" {
   cidr_block           = var.vpc_cidr
@@ -198,24 +215,18 @@ resource "aws_s3_bucket_versioning" "site" {
   }
 }
 
-# Charge la page d'accueil depuis le dossier site/.
-resource "aws_s3_object" "index" {
-  bucket       = aws_s3_bucket.site.id
-  key          = "index.html"
-  source       = "${path.module}/../site/index.html"
-  etag         = filemd5("${path.module}/../site/index.html")
-  content_type = "text/html"
+# Publie tout le contenu du dossier site/ vers S3.
+resource "aws_s3_object" "site_files" {
+  for_each = {
+    for file in local.site_files : file => file
+    if !endswith(file, "/") && !strcontains(file, "?")
+  }
 
-  depends_on = [aws_s3_bucket_ownership_controls.site]
-}
-
-# Charge la page contact depuis le dossier site/.
-resource "aws_s3_object" "contact" {
   bucket       = aws_s3_bucket.site.id
-  key          = "contact.html"
-  source       = "${path.module}/../site/contact.html"
-  etag         = filemd5("${path.module}/../site/contact.html")
-  content_type = "text/html"
+  key          = each.value
+  source       = "${local.site_root}/${each.value}"
+  etag         = filemd5("${local.site_root}/${each.value}")
+  content_type = lookup(local.site_content_types, reverse(split(".", each.value))[0], "application/octet-stream")
 
   depends_on = [aws_s3_bucket_ownership_controls.site]
 }

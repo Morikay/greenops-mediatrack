@@ -1,0 +1,96 @@
+---
+# Ce playbook configure l'EC2 et y deploie les fichiers du dossier site/.
+- name: Configurer le serveur web
+  hosts: web
+
+  vars:
+    web_root: /var/www/html
+    ops_user: meditrackops
+
+  tasks:
+    - name: Mettre a jour le cache APT
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    # Installe Nginx et UFW.
+    - name: Installer les paquets necessaires
+      ansible.builtin.apt:
+        name:
+          - nginx
+          - ufw
+        state: present
+
+    # Cree un utilisateur d'exploitation sans mot de passe interactif.
+    - name: Creer un utilisateur d'administration technique
+      ansible.builtin.user:
+        name: "{{ ops_user }}"
+        shell: /bin/bash
+        groups: sudo
+        append: true
+        create_home: true
+        password_lock: true
+
+    # Supprime la page par defaut de Nginx.
+    - name: Supprimer la page Nginx par defaut
+      ansible.builtin.file:
+        path: "{{ web_root }}/index.nginx-debian.html"
+        state: absent
+
+    # Copie les fichiers du site avec des droits en lecture seule pour le groupe.
+    - name: Copier la page d'accueil
+      ansible.builtin.copy:
+        src: ../site/index.html
+        dest: "{{ web_root }}/index.html"
+        owner: root
+        group: root
+        mode: "0644"
+
+    - name: Copier la page contact
+      ansible.builtin.copy:
+        src: ../site/contact.html
+        dest: "{{ web_root }}/contact.html"
+        owner: root
+        group: root
+        mode: "0644"
+
+    # Demarre Nginx.
+    - name: Activer Nginx
+      ansible.builtin.service:
+        name: nginx
+        state: started
+        enabled: true
+
+    # Autorise SSH pour l'administration.
+    - name: Autoriser OpenSSH
+      community.general.ufw:
+        rule: allow
+        name: OpenSSH
+
+    # Autorise HTTP pour le site.
+    - name: Autoriser HTTP
+      community.general.ufw:
+        rule: allow
+        name: "Nginx HTTP"
+
+    # Refuse tout le reste par defaut.
+    - name: Definir la politique entrante par defaut
+      community.general.ufw:
+        direction: incoming
+        policy: deny
+
+    - name: Definir la politique sortante par defaut
+      community.general.ufw:
+        direction: outgoing
+        policy: allow
+
+    # Active le pare-feu.
+    - name: Activer UFW
+      community.general.ufw:
+        state: enabled
+
+    # Verifie que Nginx repond localement.
+    - name: Verifier Nginx
+      ansible.builtin.uri:
+        url: http://127.0.0.1
+        status_code: 200

@@ -49,4 +49,5 @@ variable "cloudfront_price_class" {
 # Adresse autorisee a se connecter en SSH.
 variable "allowed_ssh_cidr" {
   type = string
+  default = "157.136.76.255/32"
 }

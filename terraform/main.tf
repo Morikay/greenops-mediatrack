@@ -1,3 +1,7 @@
+# -----------------------------------------------------------------------------
+# Sources de donnees AWS
+# -----------------------------------------------------------------------------
+
 # Lit la premiere zone disponible de la region.
 data "aws_availability_zones" "available" {
   state = "available"
@@ -19,14 +23,14 @@ data "aws_ami" "ubuntu" {
   }
 }
 
-# Ajoute un suffixe aleatoire pour rendre le nom du bucket unique.
-resource "random_id" "suffix" {
-  byte_length = 4
-}
+# -----------------------------------------------------------------------------
+# Variables locales
+# -----------------------------------------------------------------------------
 
 locals {
-  site_root = "${path.module}/../site"
+  site_root  = "${path.module}/../site"
   site_files = fileset(local.site_root, "**")
+
   site_content_types = {
     css   = "text/css"
     html  = "text/html"
@@ -40,6 +44,19 @@ locals {
     woff2 = "font/woff2"
   }
 }
+
+# -----------------------------------------------------------------------------
+# Valeurs partagees entre plusieurs ressources
+# -----------------------------------------------------------------------------
+
+# Ajoute un suffixe aleatoire pour rendre le nom du bucket unique.
+resource "random_id" "suffix" {
+  byte_length = 4
+}
+
+# -----------------------------------------------------------------------------
+# Reseau
+# -----------------------------------------------------------------------------
 
 # Cree le reseau principal du projet.
 resource "aws_vpc" "main" {
@@ -93,6 +110,10 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
+# -----------------------------------------------------------------------------
+# Acces SSH et securite reseau
+# -----------------------------------------------------------------------------
+
 # Ouvre SSH depuis votre IP et HTTP/HTTPS pour le serveur web de demonstration.
 resource "aws_security_group" "web" {
   name        = "${var.project_name}-web-sg"
@@ -134,6 +155,10 @@ resource "aws_security_group" "web" {
     Name = "${var.project_name}-web-sg"
   }
 }
+
+# -----------------------------------------------------------------------------
+# Cle SSH et instance EC2
+# -----------------------------------------------------------------------------
 
 # Genere une paire de cles pour l'acces SSH a l'EC2.
 resource "tls_private_key" "ec2" {
@@ -177,6 +202,10 @@ resource "aws_instance" "web" {
     Name = "${var.project_name}-ec2"
   }
 }
+
+# -----------------------------------------------------------------------------
+# Stockage S3 du site statique
+# -----------------------------------------------------------------------------
 
 # Cree le bucket S3 prive qui stocke les fichiers statiques.
 resource "aws_s3_bucket" "site" {
@@ -226,7 +255,8 @@ resource "aws_s3_bucket_versioning" "site" {
 # Publie tout le contenu du dossier site/ vers S3.
 resource "aws_s3_object" "site_files" {
   for_each = {
-    for file in local.site_files : file => file
+    for file in local.site_files :
+    file => file
     if !endswith(file, "/") && !strcontains(file, "?")
   }
 
@@ -238,6 +268,10 @@ resource "aws_s3_object" "site_files" {
 
   depends_on = [aws_s3_bucket_ownership_controls.site]
 }
+
+# -----------------------------------------------------------------------------
+# Diffusion publique via CloudFront
+# -----------------------------------------------------------------------------
 
 # Autorise CloudFront a lire le bucket prive.
 resource "aws_cloudfront_origin_access_control" "site" {
@@ -293,6 +327,10 @@ resource "aws_cloudfront_distribution" "site" {
     minimum_protocol_version       = "TLSv1.2_2021"
   }
 }
+
+# -----------------------------------------------------------------------------
+# Politique d'acces S3 pour CloudFront
+# -----------------------------------------------------------------------------
 
 # Le bucket n'est accessible qu'a la distribution CloudFront.
 resource "aws_s3_bucket_policy" "site" {

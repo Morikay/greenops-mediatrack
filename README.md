@@ -1,125 +1,151 @@
-# GreenOps MediTrack
+# GreenOps MediTrack - Bloc 1
 
 Projet de formation DevOps pour automatiser le deploiement d'une infrastructure AWS simple avec Terraform et Ansible.
 
+## Objectif
+
+Ce projet repond a une etude de cas orientee AWS avec les contraintes suivantes :
+
+- provisionner l'infrastructure avec Terraform ;
+- configurer l'instance EC2 avec Ansible ;
+- publier un site statique via S3 et CloudFront ;
+- appliquer des mesures de securite simples et coherentes.
+
 ## Architecture retenue
 
-- `S3 + CloudFront` : publication publique du site statique en HTTPS.
-- `EC2 + Nginx + Ansible` : demonstration de configuration serveur et de securisation systeme.
-- `VPC + sous-reseau public` : socle reseau minimal pour l'instance EC2.
+- `VPC + sous-reseau public` : reseau minimal pour l'instance EC2.
+- `EC2 Ubuntu t3.micro` : serveur leger configure avec Ansible.
+- `Nginx` : service web sur l'EC2 avec redirection HTTP vers HTTPS.
+- `S3` : stockage des fichiers statiques du site.
+- `CloudFront` : diffusion publique du site en HTTPS.
 
-Le site public de reference est l'URL CloudFront. L'instance EC2 ne remplace pas CloudFront ; elle sert a demontrer l'automatisation systeme imposee par l'etude de cas.
+Le point d'entree public principal du projet est CloudFront. L'instance EC2 sert a la partie configuration systeme demandee par l'etude de cas.
 
-## Arborescence
+## Etat de l'infrastructure deployee
+
+- URL CloudFront : `https://difzkce0aqf6s.cloudfront.net`
+- Nom de domaine CloudFront : `difzkce0aqf6s.cloudfront.net`
+- EC2 DNS public : `ec2-35-180-79-188.eu-west-3.compute.amazonaws.com`
+- EC2 IP publique : `35.180.79.188`
+- Bucket S3 : `greenops-mediatrack-af18a78a`
+
+## Arborescence reelle
 
 ```text
 .
 ├── ansible/
 │   ├── ansible.cfg
-│   ├── generate_inventory.sh
 │   ├── inventory.ini
-│   └── playbook.yml
-├── docs/
-│   ├── architecture.md
-│   ├── evidence-checklist.md
-│   ├── report-template.md
-│   └── iam/
-│       └── terraform-deployer-policy.json
+│   ├── playbook.yml
+│   └── templates/
+│       └── meditrack-nginx.conf.j2
 ├── site/
+│   ├── assets/
 │   ├── contact.html
 │   └── index.html
 └── terraform/
     ├── main.tf
     ├── outputs.tf
     ├── provider.tf
-    ├── terraform.tfvars.example
     ├── variables.tf
     └── version.tf
 ```
 
+## Role des dossiers
+
+- `terraform/` : creation de l'infrastructure AWS.
+- `ansible/` : configuration de l'instance EC2.
+- `site/` : contenu statique du site web.
+
 ## Prerequis
 
-- Terraform 1.5+
-- Ansible
+- Terraform 1.5 ou plus
 - AWS CLI
-- Un profil AWS local avec les droits IAM adaptes
+- Ansible
+- un profil AWS CLI local fonctionnel
+- une paire de cles IAM rattachee a l'utilisateur `greenops-mediatrack-deployer`
 
-## Configuration locale
+## Authentification AWS
 
-1. Copier l'exemple de variables :
+Terraform utilise le provider AWS declare dans [provider.tf](/home/llesage/greenops-mediatrack/terraform/provider.tf) avec :
 
-```bash
-cd /home/llesage/greenops-mediatrack/terraform
-cp terraform.tfvars.example terraform.tfvars
-```
+- la region `eu-west-3`
+- le profil local `greenops`
+- les fichiers AWS locaux :
+  - `/home/llesage/.aws/config`
+  - `/home/llesage/.aws/credentials`
 
-2. Adapter au minimum :
+Le profil local `greenops` pointe vers l'utilisateur IAM AWS `greenops-mediatrack-deployer`.
 
-- `aws_profile`
-- `allowed_ssh_cidr`
+## Deploiement Terraform
 
-## Deploiement
-
-### 1. Provisionner avec Terraform
-
-Contexte : machine locale, dossier [terraform/main.tf](/home/llesage/greenops-mediatrack/terraform/main.tf)
+Contexte : machine locale, dans le dossier `/home/llesage/greenops-mediatrack/terraform`
 
 ```bash
 cd /home/llesage/greenops-mediatrack/terraform
-terraform init
-terraform fmt
-terraform validate
-terraform plan
-terraform apply
+HOME=/home/llesage terraform init
+HOME=/home/llesage terraform validate
+HOME=/home/llesage terraform plan
+HOME=/home/llesage terraform apply
 ```
 
-### 2. Generer l'inventaire Ansible
+## Deploiement Ansible
 
-Contexte : machine locale, dossier [ansible/generate_inventory.sh](/home/llesage/greenops-mediatrack/ansible/generate_inventory.sh)
+Contexte : machine locale, dans le dossier `/home/llesage/greenops-mediatrack/ansible`
 
-```bash
-cd /home/llesage/greenops-mediatrack/ansible
-bash generate_inventory.sh
-```
-
-### 3. Configurer l'instance EC2 avec Ansible
-
-Contexte : machine locale, dossier [ansible/playbook.yml](/home/llesage/greenops-mediatrack/ansible/playbook.yml)
+Le fichier [inventory.ini](/home/llesage/greenops-mediatrack/ansible/inventory.ini) doit contenir le DNS public de l'instance EC2, l'utilisateur `ubuntu` et le chemin de la cle SSH.
 
 ```bash
 cd /home/llesage/greenops-mediatrack/ansible
 ansible-galaxy collection install community.general
-ansible-playbook playbook.yml
+ansible -i inventory.ini web -m ping
+ansible-playbook -i inventory.ini playbook.yml
 ```
 
 ## Verification
 
+### Terraform
+
 ```bash
 cd /home/llesage/greenops-mediatrack/terraform
-terraform output cloudfront_url
-terraform output ec2_public_dns
+HOME=/home/llesage terraform output
 ```
 
-Ouvrir ensuite l'URL CloudFront dans un navigateur. Le site doit etre accessible en HTTPS. Une requete HTTP doit etre redirigee vers HTTPS par CloudFront.
+### Site public
+
+Ouvrir :
+
+- `https://difzkce0aqf6s.cloudfront.net`
+
+### Instance EC2
+
+Verifier :
+
+- `http://ec2-35-180-79-188.eu-west-3.compute.amazonaws.com` redirige vers HTTPS
+- `https://ec2-35-180-79-188.eu-west-3.compute.amazonaws.com` repond correctement
 
 ## Securite mise en oeuvre
 
-- utilisateur IAM dedie au deploiement
-- utilisateur IAM retenu pour ce projet : `greenops-mediatrack-deployer`
-- principe du moindre privilege documente dans `docs/iam/`
-- bucket S3 prive, accessible uniquement via CloudFront
-- TLS force sur CloudFront
-- EBS chiffre sur l'EC2
+- utilisateur IAM dedie : `greenops-mediatrack-deployer`
+- principe du moindre privilege applique au compte de deploiement
+- chiffrement EBS sur l'instance EC2
 - IMDSv2 obligatoire sur l'EC2
-- SSH limite a une IP source en `/32`
-- UFW active sur le serveur
+- SSH restreint a une IP source precise
+- UFW active sur l'instance
+- HTTPS force via CloudFront
+- HTTPS egalement configure sur l'EC2 avec certificat autosigne
 
-## Fichiers a ne jamais publier
+## Remarque importante
 
-Le depot ignore :
+Le certificat HTTPS de l'EC2 est autosigne. Il permet de demontrer le chiffrement du flux sur l'instance, mais le point d'entree public de reference reste CloudFront.
 
-- les cles privees `.pem`
-- les fichiers `terraform.tfstate`
-- les fichiers `terraform.tfvars`
+## Fichiers sensibles
 
-Si ces fichiers ont deja ete pousses sur un depot distant, il faut les retirer de l'historique et regenerer les secrets concernes.
+Ces fichiers ne doivent pas etre publies dans un depot public :
+
+- `terraform/terraform.tfstate`
+- `terraform/terraform.tfstate.backup`
+- `terraform/greenops-mediatrack-ec2.pem`
+- tout fichier `terraform.tfvars` local
+
+Si une cle ou un secret a deja ete expose, il faut le regenerer.
